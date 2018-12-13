@@ -208,18 +208,32 @@ class potreg(rindex.Index):
 # interacting with a method when solving a minimization problem.
 # Input: one or more Pareto optimal objective vectors, 
 # Output: two reference points (aspiration,reservation)
-# Attributes
+## Attributes
 #   .k: nr. of objectives
 #   .itern: current iteration nr.
+#   .c: coefficient of optimizm (float)               
 #   ._ideal, ._nadir: corresponding points
 #   ._potreg: potential region based on potreg class
 #   ._paretoset: list of nuique Pareto objective vectors
 #   ._npareto: nr. of unique Pareto objective vectors
-#   .c: coefficient of optimizm (float)
 #   ._uf: utility function (R^k,Ideal,Nadir -> R)
+#   .telemetry: dictionary of lists collecting relevant information in each iteration
+## Methods
 #   ._box_score: function (box=[min vector,max vector]) -> score (float)
 #               which is used when selecting boxes
-#   .telemetry: dictionary collecting list relevant information in each iteration
+#   ._ufbox: basic example of _box_score calculating UF at the representative point
+#   .box_pref: given a box, returns preference information related to this box
+#   ._box_refpoint: basic example of box_pref returning [[min. point],[max. point]]
+#           of the box which serve as aspiration and reservation ref. points               
+#   ._upd: Given one or list of Pareto optimal objective vectors, 
+#          adds new ones to the Pareto optimal set, updates the potential region
+#          and returns [True iff potential region was changed, list of new Pareto optima]
+#   .potboxes: returns the list of all boxes of the potential region
+#   .bestbox: returns the best box [ [[min. point],[max.point]],id ] based on _box_score
+#   .nextiter: Given one or set of Pareto optima, updates the potential region
+#              and returns new preference information               
+
+
 
 class ADM:
     def __init__(self,ideal,nadir,uf,coptimizm):
