@@ -4,28 +4,27 @@ import numpy as np
 import copy
 
 ## DESDEO
-from desdeo.method.NIMBUS import NIMBUS
-from desdeo.optimization import SciPyDE
-from desdeo.problem.toy import RiverPollution
-
-from desdeo.preference import NIMBUSClassification
+#from desdeo.method.NIMBUS import NIMBUS
+#from desdeo.optimization import SciPyDE
+#from desdeo.problem.toy import RiverPollution
+#from desdeo.preference import NIMBUSClassification
 
 ## Rectangles
 from rtree import index as rindex
 
 ### Supplementary functions
 
-## Calculate hypervolume of a box given by min and max points
+## Calculate hypervolume of a box given min and max points
 def hv_box(mn,mx):
     return np.prod([mxi-mni for mni,mxi in zip(mn,mx)])
 
-## Given a nested list, Returns a list of all lists of size k x 2
-# for extracting results of the recursive box partitioning function divbox_rec
+## Given a nested list, Returns a list of all lists of size k x 2.
+# Used for extracting results of the recursive function divbox_rec
+# It's also a recursive function
 def flat_boxlist(a,k):
     # leaf of recursion calls
-    try: # check if a is k x 2 list with non-list elements
-        if len(a)==k and \
-           any(
+    try: # check if "a" is k x 2 list with non-list elements
+        if len(a)==k and any( \
                (
                 len(ai)==2 and \
                 not( any( isinstance(aii,list) for aii in ai ) )
@@ -34,7 +33,7 @@ def flat_boxlist(a,k):
             return [a]
     except:
         pass
-    # next level recursion call
+    # next level recursion call: collect the results at the lower level
     if isinstance(a,list):
         return sum([flat_boxlist(i,k) for i in a],[])
     else:
@@ -53,55 +52,68 @@ def rindex2box(v):
     return np.array(v).reshape(2,-1).tolist()
 
 ## Recursive function for generating all open boxes partitioning a given box,
-#  resulted from subtract the dual domination cone (represented by its vertex)
+#  resulted from subtracting the dual domination cone (represented by its vertex)
 # Given: 
-#  vrange = [for each i: [min,max] if the range of the part is defined for this i,
-#           or [min,mid,max] if (mid=the vertex component) belongs to the open range
-#           and the selection of higher or lower range is not defined for this i]
-#  nlo = nr. of dimensions, for which the range is defined to be below the vertex component
-#  nhi = nr. of dimensions, for which the range is defined to be above the vertex component
+#  vrange = [
+#           for each i: [min,max] if the part was defined for this i, otherwise
+#           [min,mid,max] where mid(=the component of the cone's vertex) 
+#           belongs to the open range of the box, 
+#           and the selection of higher or lower part was not done for this i
+#           ]
+#  nlo = nr. of dimensions, for which the box range is determined or selected 
+#        to be below the vertex component
+#  nhi = nr. of dimensions, for which the range is is determined or selected 
+#        to be above the vertex component
 #  k = total nr. of dimensions
-#  ii - currently considered dimension nr. (for previous ones, the range is defined)
+#  ii = currently considered dimension nr. (for previous ones, 
+#       the part of the range was determined or selected)
 # Returns:
-#  if range is defined for all i (nlo+nhi==k) => [for each i, [min,max]] (leaf of recursion)
-#  if some range is not defined (nlo+nhi<k) => branching the recursion, i.e. 
-#       for j=(first index with undefined range), call divbox_rec in cases of upper and lower ranges
+#  if part of the range is defined for all i (nlo+nhi==k), then 
+#      [for each i, [min,max]] (the leaf of the recursion)
+#  if some range is not defined (nlo+nhi<k), then the result of branching of 
+#      the recursion, i.e. for j=(first index with undefined part), 
+#      call divbox_rec for the cases of upper and lower parts
 def divbox_rec(vrange,nlo,nhi,k,ii):
-    #x#print(vrange,": ",nlo,"+",nhi,", ii=",ii)
-    # If in each dimension, range of the considered part is defined => recursion leaf
+    # If in each dimension, range of the considered part is defined,
+    # then recursion leaf
     if nlo+nhi==k: 
-        if nlo<k and nhi<k: # the part is not dominating / dominated by the vertex
+        # the part of the box is not dominated by / dominating the vertex
+        if nlo<k and nhi<k: 
             return [vrange]
+        # otherwise, the part will not be included in the potential region
         else:
             return []
-    # For some dimension, the part can be divided into higher/lower parts
-    # init. two branches of the considered part, to be passed to next recursion level
-    vlo=copy.deepcopy(vrange) # undefined range -> lower range
-    vhi=copy.deepcopy(vrange) # undefined range -> upper range
+    # If for some dimension, the part can be divided into higher/lower parts,
+    # create two recursion branches for the considered dimension.
+        # initialize two versions of the list of ranges
+    vlo=copy.deepcopy(vrange) # initial range list -> ranges with the lower part
+    vhi=copy.deepcopy(vrange) # initial range list -> ranges of the upper part
     for i in range(ii,k):
-        if len(vrange[i])==3: # i = first index with undefined range
-            vlo[i]=vrange[i][:2] # select lower range
-            vhi[i]=vrange[i][1:] # select upper range
+        if len(vrange[i])==3: # i <- first index with undefined part
+            vlo[i]=vrange[i][:2] # the list version with the lower part
+            vhi[i]=vrange[i][1:] # the list version with the upper range
             # all parts of the box is concatenation of the two branches
             return divbox_rec(vlo,nlo+1,nhi,k,i+1) + \
                    divbox_rec(vhi,nlo,nhi+1,k,i+1)
                            
 
-### Potential region structure for minimization problems based on rtree package class
-#   Box ID (int) represent the ordinary number of the act of box creation
-#   Additional attributes:
-#    .ndim = space dimension
+### Potential region structure for minimization problems based on 
+#                                                       rtree package class.
+#   Box ID (int) attribute assigned to the boxes in the original rtree class
+#                   represents the ordinary number of the act of box creation.
+#   Additional attributes of the class object:
+#    .ndim = nr. of space dimensions 
 #    .nbox = number of boxes in the structure
 #    .ncre = number of acts of boxes creation
-#    ._hypervol = sum of hypervolume of boxes
+#    ._hypervol = sum of hypervolume of existing boxes
 class potreg(rindex.Index):
     
     def __init__(self,ideal,nadir):
-        # setting the space dimension and passing to rtree in Property object
+        # setting the space dimension and passing to rtree in a Property object
         ndim=len(ideal)
         p = rindex.Property()
         p.dimension = ndim
-        # initializing object
+        # initializing the object
         rindex.Index.__init__(self,properties=p)
         self.ndim = ndim
         # adding the first rectangle
@@ -398,14 +410,17 @@ def normalize(xx,ideal,nadir):
 
 ## Instances of utility functions used in experiments with water treatment problem,
 #  defined on [0,1]^k for maximization objectives
-water_w1=[600,1,20,5000]
-water_wmult=[5,1,1,0.01]
+#water_w1=[600,1,20,5000]
+#water_wmult=[5,1,1,0.01]
+water_w1=[1,1,1,1]
+water_wmult=[1,1,1,1]
+    
 water_UFs=[
            lambda xx: CES_mult(xx,water_wmult),
            lambda xx: CES_sum(xx,water_w1,-3),
            lambda xx: UF_TOPSIS(xx,water_w1)
         ]
-UFn=1 # choosing a UF from the list
+UFn=0 # choosing a UF from the list
 coptimizm=1 # coefficient of optimizm  
 
 
