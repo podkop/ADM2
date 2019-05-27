@@ -355,7 +355,7 @@ class ADM:
                 "changed?": upnew[0]
                 }
 
-### ADM class fo Nimbus method
+### ADM class for Nimbus method
 
 #? future features:
 #    * koef (0,+inf), default=1 for putting temp. ref.point on the half-line
@@ -395,6 +395,12 @@ def UF_TOPSIS(xx,ww):
 #  which converts minimization objectives to maximization objectives
 def normalize(xx,ideal,nadir):
     return [(nad-x)/(nad-idl) for x,idl,nad in zip(xx,ideal,nadir)]
+
+
+
+
+#############
+
 
 ## Instances of utility functions used in experiments with water treatment problem,
 #  defined on [0,1]^k for maximization objectives
