@@ -2,7 +2,7 @@
 
 import numpy as np
 import copy
-
+import threeobj as th
 ## DESDEO
 #from desdeo.method.NIMBUS import NIMBUS
 #from desdeo.optimization import SciPyDE
@@ -43,7 +43,7 @@ def flat_boxlist(a,k):
 #  Returns the vector representation for rtree: 
 #  [min_1,min_2,...,min_k,max_1,...,max_k]
 def box2rindex(mn,mx):
-    return mn+mx
+    return list(mn)+list(mx)
 
 ## Given the rtree representation of a box as a list / numpy array
 #       [min_1,min_2,...,min_k,max_1,...,max_k],
@@ -223,7 +223,7 @@ class potreg(rindex.Index):
 ## Attributes
 #   .k: nr. of objectives
 #   .itern: current iteration nr.
-#   .c: coefficient of optimizm (float)               
+#   .c: coefficient of optimism (float)               
 #   ._ideal, ._nadir: corresponding points
 #   ._potreg: potential region based on potreg class
 #   ._paretoset: list of nuique Pareto objective vectors
@@ -248,7 +248,7 @@ class potreg(rindex.Index):
 
 
 class ADM:
-    def __init__(self,ideal,nadir,uf,coptimizm):
+    def __init__(self,ideal,nadir,uf,coptimism):
         self.k=len(ideal)
         self._ideal=ideal
         self._nadir=nadir
@@ -257,7 +257,7 @@ class ADM:
         self._paretoiter=[]
         self._paretoset=[]
         self._npareto=0
-        self.c=coptimizm
+        self.c=coptimism
         self._uf=uf
         self._box_score=self._ufbox
         self.telemetry={\
@@ -412,55 +412,73 @@ def normalize(xx,ideal,nadir):
 
 
 #############
-
-
-## Instances of utility functions used in experiments with water treatment problem,
+### Instances of utility functions used in experiments with water treatment problem,
 #  defined on [0,1]^k for maximization objectives
-#water_w1=[600,1,20,5000]
-#water_wmult=[5,1,1,0.01]
-water_w1=[1,1,1,1]
-water_wmult=[1,1,1,1]
+## Utility weight examples
+ut_ces1=[1,1,1]
+ut_ces2=[1,0.75,0.5]
+ut_mult=[1,1,1]
     
-water_UFs=[
-           lambda xx: CES_mult(xx,water_wmult),
-           lambda xx: CES_sum(xx,water_w1,-3),
-           lambda xx: UF_TOPSIS(xx,water_w1)
+UFs=[
+           lambda xx: CES_sum(xx,ut_ces1,-3),
+           lambda xx: CES_sum(xx,ut_ces2,-3),
+           lambda xx: CES_mult(xx,ut_ces1)
         ]
+
 UFn=0 # choosing a UF from the list
-coptimizm=1 # coefficient of optimizm  
+coptimism=1 # coefficient of optimism  
 
+A=ADM(
+        th.ideal,
+        th.nadir,
+        lambda x,ideal,nadir: UFs[UFn](normalize(x,ideal,nadir)),
+        coptimism)
+p=[] #
 
-            
-problem = RiverPollution()
-method = NIMBUS(problem, SciPyDE)
-print("Ideal, nadir",problem.ideal,problem.nadir)
-
-
-# in simpler version, pref.info does not depend on current solution(s)
-# results = method.init_iteration()
-A=ADM_Nimbus(
-        problem.ideal,
-        problem.nadir,
-        lambda x,ideal,nadir: water_UFs[UFn](normalize(x,ideal,nadir)),
-        1)
-p=[]
 for i in range(5):
     print("Iteration ",i)
     print("Created: ",A._potreg.ncre, ", left: ",A._potreg.nbox,", count: ",
-          A._potreg.count(box2rindex([-np.inf for i in range(4)],
-                                     [np.inf for i in range(4)]))
+          A._potreg.count(box2rindex([-np.inf for i in range(th.nfun)],
+                                     [np.inf for i in range(th.nfun)]))
           )
     result=A.nextiter(p)
     pref=result["pref"]
     pref1=normalize([x[1] for x in pref],A._ideal,A._nadir)
     print("Preferences:",[format(x,"1.10") for x in pref1])
-    p=[method._factories[0].result(
-                      NIMBUSClassification(method, pref), None
-                      )[1]
-                                                     for i in range(1)]
-    #print("Pareto:",[format(x,"1.10") for x in normalize(p[0],A._ideal,A._nadir)])
-    #x# print("New: ",p)
+    p=[th.solve_ref(pref[0],itern=5)["x"][:-1]]
 
 
+#### Old version using DESDEO
+            
+#problem = RiverPollution()
+#method = NIMBUS(problem, SciPyDE)
+#print("Ideal, nadir",problem.ideal,problem.nadir)
 
-
+## in simpler version, pref.info does not depend on current solution(s)
+## results = method.init_iteration()
+#A=ADM_Nimbus(
+#        problem.ideal,
+#        problem.nadir,
+#        lambda x,ideal,nadir: water_UFs[UFn](normalize(x,ideal,nadir)),
+#        1)
+#p=[]
+#for i in range(5):
+#    print("Iteration ",i)
+#    print("Created: ",A._potreg.ncre, ", left: ",A._potreg.nbox,", count: ",
+#          A._potreg.count(box2rindex([-np.inf for i in range(4)],
+#                                     [np.inf for i in range(4)]))
+#          )
+#    result=A.nextiter(p)
+#    pref=result["pref"]
+#    pref1=normalize([x[1] for x in pref],A._ideal,A._nadir)
+#    print("Preferences:",[format(x,"1.10") for x in pref1])
+#    p=[method._factories[0].result(
+#                      NIMBUSClassification(method, pref), None
+#                      )[1]
+#                                                     for i in range(1)]
+#    #print("Pareto:",[format(x,"1.10") for x in normalize(p[0],A._ideal,A._nadir)])
+#    #x# print("New: ",p)
+#
+#
+#
+#
