@@ -3,7 +3,9 @@
 import numpy as np
 import copy
 import threeobj as th
+
 import matplotlib.pyplot as plt
+# from pylab import *
 ## DESDEO
 #from desdeo.method.NIMBUS import NIMBUS
 #from desdeo.optimization import SciPyDE
@@ -199,8 +201,9 @@ class potreg(rindex.Index):
                 self.nbox-=1
                 self.delete(rid,rv)
                 self._hypervol-=hv_box(*rindex2box(rv))
-#                print("-o ",np.array(rindex2box(rv)[0]),"\n",
-#                      "   ",np.array(rindex2box(rv)[1])) #!#
+                print("-o ",A._box_score(rindex2box(rv)),"\n",
+                      "   ",np.array(rindex2box(rv)[0]),"\n",
+                      "   ",np.array(rindex2box(rv)[1])) #!#
                 # insert its remaining parts
                 newboxes=flat_boxlist(divbox_rec(vrange_rec,nlo,nhi,self.ndim,0),self.ndim)
                 for c in newboxes:
@@ -208,8 +211,9 @@ class potreg(rindex.Index):
                     self.ncre+=1
                     self.insert(self.ncre,box2rindex(*(np.array(c).T.tolist())))
                     self._hypervol+=hv_box(*(np.array(c).T.tolist()))
-#                    print("+  ",np.array(c).T[0],"\n",
-#                          "   ",np.array(c).T[1]) #!#
+                    print("+  ",A._box_score(rindex2box(np.array(c).T)),"\n",
+                          "   ",np.array(c).T[0],"\n",
+                          "   ",np.array(c).T[1]) #!#
         return qchange
     
     # Returns list of al boxes (as [ [[min vect.],[max vect.]],id ]) in the potential region 
@@ -371,7 +375,8 @@ class ADM:
         self.telemetry["pref"].append(newpref)
         self.itern+=1
         return {"pref": newpref,
-                "changed?": upnew[0]
+                "changed?": upnew[0],
+                "bestbox": bb # should be also deleted for avoiding cycles
                 }
 
 ### ADM class for Nimbus method
@@ -398,7 +403,7 @@ class ADM_Nimbus(ADM):
 #  defined for maximization criteria in the region [0,1]^k
 # CES based on multiplication
 def CES_mult(xx,ww):
-    return np.prod([x**w for x,w in zip(xx,ww)])
+    return np.prod([(x+0.01)**w for x,w in zip(xx,ww)])
 # CES based on power summation
 def CES_sum(xx,ww,p):
     try:
@@ -419,34 +424,40 @@ def normalize(xx,ideal,nadir):
 
 
 #############
-np.set_printoptions(precision=3)
+np.set_printoptions(precision=5)
 ### Instances of utility functions used in experiments with water treatment problem,
 #  defined on [0,1]^k for maximization objectives
 ## Utility weight examples
 ut_ces1=[1,1,1]
-ut_ces2=[2,1,0.5]
-ut_mult=[1,1,1]
+ut_ces2=[3,2,1]
+ut_mult=[0.6,0.5,0.4]
     
 UFs=[
-           lambda xx: CES_sum(xx,ut_ces1,-3),
-           lambda xx: CES_sum(xx,ut_ces2,-10),
-           lambda xx: CES_mult(xx,ut_ces2)
+           lambda xx: CES_sum(xx,ut_ces1,0.01),
+           lambda xx: CES_sum(xx,ut_ces2,0.8),
+           lambda xx: CES_mult(xx,ut_mult)
         ]
 
-UFn=1 # choosing a UF from the list
+fig0,ax0=plt.subplots()
+fig1,ax1=plt.subplots()
+fig2,ax2=plt.subplots()
+
+UFn=2 # choosing a UF from the list
 coptimism=1 # coefficient of optimism  
 for coptimism in [1,0]:
-    p=[[1,1,1]]
+    p=[]
     A=ADM(
             th.ideal,
             th.nadir,
             lambda x,ideal,nadir: UFs[UFn](normalize(x,ideal,nadir)),
             coptimism)
-    
-    
-    for i in range(10):
+    sel_box=None # box based on which the last Pareto optimum was derived    
+    for i in range(40):
         print("Iteration ",i)
         result=A.nextiter(p)
+        if i>1:
+            A._potreg.delete(sel_box[1],box2rindex(*sel_box[0]))
+        sel_box=result["bestbox"]
         print("Created: ",A._potreg.ncre, ", left: ",A._potreg.nbox,", count: ",
               A._potreg.count(box2rindex([-np.inf for i in range(th.nfun)],
                                          [np.inf for i in range(th.nfun)]))
@@ -458,12 +469,19 @@ for coptimism in [1,0]:
         p=[th.f(
                 th.solve_ref(pref[0],
                 th.w0,#1/(pref[1]-pref[0]),
-                itern=5)["x"][:-1]
+                itern=6)["x"][:-1]
                 )
                 ]
-        print("solution:\n",p[0],"\n")
-    
-    plt.plot(A.telemetry["maxuf"])
+        print("solution:\n",p[0],"\n")    
+    ax0.plot(A.telemetry["maxuf"])
+
+    ax1.plot([np.linalg.norm(
+            normalize(p2[0],th.ideal,th.nadir)-
+            normalize(p1[0],th.ideal,th.nadir)
+            ) for p1,p2 in 
+        zip(A.telemetry["Pareto"][1:],A.telemetry["Pareto"][:-1])]
+        )
+    ax2.plot(A.telemetry["hypervol"])
 plt.show()
 
     

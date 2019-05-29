@@ -53,7 +53,9 @@ t_constr=[ # *args = (ref.point_i,weight_i)
 
 def solve_ref(refpoint,w,sampl_m='simplicial',itern=1,npoints=100):
     # shifting the ref. point to exceed nadir+(nadir-ideal)
-    tadd=max(0,max(w*(5*nadir-4*ideal)))
+    tadd=max(0,max(w*(4*nadir-3*ideal-refpoint)))
+    print(w*(2*nadir-1*ideal-refpoint))
+    print(tadd)
     refp=refpoint+tadd/w
     # calling the solver
     sol = shgo(
@@ -71,7 +73,7 @@ def solve_ref(refpoint,w,sampl_m='simplicial',itern=1,npoints=100):
             sampling_method=sampl_m,
             iters=itern,
             n=npoints,
-            options={"minimize_every_iter":True,"local_iter":True}
+            options={"minimize_every_iter":True,"local_iter":False}
            )
     # are ASF constraints tight?
     constr=[
@@ -88,10 +90,10 @@ def solve_ref(refpoint,w,sampl_m='simplicial',itern=1,npoints=100):
             "nlfev":sol["nlfev"],
             "constr":constr}
 if __name__=="__main__":
-    for i in range(100):
-        rfp=[ideal[i]+np.random.random_sample()*(nadir[i]-ideal[i])
-                for i in range(nfun)]
-        print(solve_ref(rfp,w0,itern=5)["x"][:-1],"\n")
-    #sol=solve_ref([-1,-1,-1],itern=6)
-    #print(sol)
+#    for i in range(100):
+#        rfp=[ideal[i]+np.random.random_sample()*(nadir[i]-ideal[i])
+#                for i in range(nfun)]
+#        print(solve_ref(rfp,w0,itern=5)["x"][:-1],"\n")
+    sol=solve_ref([-1.,-1.,1.06721],w0,itern=6)
+    print(f(sol["x"][:-1]))
 
