@@ -3,6 +3,7 @@
 import numpy as np
 import copy
 import threeobj as th
+import matplotlib.pyplot as plt
 ## DESDEO
 #from desdeo.method.NIMBUS import NIMBUS
 #from desdeo.optimization import SciPyDE
@@ -186,6 +187,8 @@ class potreg(rindex.Index):
                 self.nbox-=1
                 self.delete(rid,rv)
                 self._hypervol-=hv_box(*rindex2box(rv))
+#                print("-  ",np.array(rindex2box(rv)[0]),"\n",
+#                      "   ",np.array(rindex2box(rv)[1])) #!#
             # Box does not intersect with either of the cones => do nothing 
             elif nlo>0 and nhi>0:
                 break
@@ -196,6 +199,8 @@ class potreg(rindex.Index):
                 self.nbox-=1
                 self.delete(rid,rv)
                 self._hypervol-=hv_box(*rindex2box(rv))
+#                print("-o ",np.array(rindex2box(rv)[0]),"\n",
+#                      "   ",np.array(rindex2box(rv)[1])) #!#
                 # insert its remaining parts
                 newboxes=flat_boxlist(divbox_rec(vrange_rec,nlo,nhi,self.ndim,0),self.ndim)
                 for c in newboxes:
@@ -203,6 +208,8 @@ class potreg(rindex.Index):
                     self.ncre+=1
                     self.insert(self.ncre,box2rindex(*(np.array(c).T.tolist())))
                     self._hypervol+=hv_box(*(np.array(c).T.tolist()))
+#                    print("+  ",np.array(c).T[0],"\n",
+#                          "   ",np.array(c).T[1]) #!#
         return qchange
     
     # Returns list of al boxes (as [ [[min vect.],[max vect.]],id ]) in the potential region 
@@ -318,7 +325,7 @@ class ADM:
         for p in pp:
             qincl=True
             for p1 in self._paretoset:
-                if p==p1:
+                if (p==p1).all():
                     qincl=False
                     break
             if qincl:
@@ -358,7 +365,7 @@ class ADM:
         self.telemetry["crboxes"].append(self._potreg.ncre)
         self.telemetry["npareto"].append(self._npareto)
         bb=self.bestbox()
-        #print([normalize(x,self._ideal,self._nadir) for x in bb[0]])
+        #x# print([normalize(x,self._ideal,self._nadir) for x in bb[0]])
         self.telemetry["bestbox"].append(bb)
         newpref=self.box_pref(bb[0])
         self.telemetry["pref"].append(newpref)
@@ -406,46 +413,60 @@ def UF_TOPSIS(xx,ww):
 ## Linear normalization: ideal -> 1, nadir -> 0
 #  which converts minimization objectives to maximization objectives
 def normalize(xx,ideal,nadir):
-    return [(nad-x)/(nad-idl) for x,idl,nad in zip(xx,ideal,nadir)]
+    return np.array([(nad-x)/(nad-idl) for x,idl,nad in zip(xx,ideal,nadir)])
 
 
 
 
 #############
+np.set_printoptions(precision=3)
 ### Instances of utility functions used in experiments with water treatment problem,
 #  defined on [0,1]^k for maximization objectives
 ## Utility weight examples
 ut_ces1=[1,1,1]
-ut_ces2=[1,0.75,0.5]
+ut_ces2=[2,1,0.5]
 ut_mult=[1,1,1]
     
 UFs=[
            lambda xx: CES_sum(xx,ut_ces1,-3),
-           lambda xx: CES_sum(xx,ut_ces2,-3),
-           lambda xx: CES_mult(xx,ut_ces1)
+           lambda xx: CES_sum(xx,ut_ces2,-10),
+           lambda xx: CES_mult(xx,ut_ces2)
         ]
 
-UFn=0 # choosing a UF from the list
+UFn=1 # choosing a UF from the list
 coptimism=1 # coefficient of optimism  
+for coptimism in [1,0]:
+    p=[[1,1,1]]
+    A=ADM(
+            th.ideal,
+            th.nadir,
+            lambda x,ideal,nadir: UFs[UFn](normalize(x,ideal,nadir)),
+            coptimism)
+    
+    
+    for i in range(10):
+        print("Iteration ",i)
+        result=A.nextiter(p)
+        print("Created: ",A._potreg.ncre, ", left: ",A._potreg.nbox,", count: ",
+              A._potreg.count(box2rindex([-np.inf for i in range(th.nfun)],
+                                         [np.inf for i in range(th.nfun)]))
+              )
+        
+        pref=np.array(result["pref"])
+        # pref1=[normalize(x,A._ideal,A._nadir) for x in pref]
+        print("Preferences:\n",pref[0],"\n",pref[1])
+        p=[th.f(
+                th.solve_ref(pref[0],
+                th.w0,#1/(pref[1]-pref[0]),
+                itern=5)["x"][:-1]
+                )
+                ]
+        print("solution:\n",p[0],"\n")
+    
+    plt.plot(A.telemetry["maxuf"])
+plt.show()
 
-A=ADM(
-        th.ideal,
-        th.nadir,
-        lambda x,ideal,nadir: UFs[UFn](normalize(x,ideal,nadir)),
-        coptimism)
-p=[] #
-
-for i in range(5):
-    print("Iteration ",i)
-    print("Created: ",A._potreg.ncre, ", left: ",A._potreg.nbox,", count: ",
-          A._potreg.count(box2rindex([-np.inf for i in range(th.nfun)],
-                                     [np.inf for i in range(th.nfun)]))
-          )
-    result=A.nextiter(p)
-    pref=result["pref"]
-    pref1=normalize([x[1] for x in pref],A._ideal,A._nadir)
-    print("Preferences:",[format(x,"1.10") for x in pref1])
-    p=[th.solve_ref(pref[0],itern=5)["x"][:-1]]
+    
 
 
 #### Old version using DESDEO

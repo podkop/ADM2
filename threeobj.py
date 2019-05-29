@@ -25,8 +25,8 @@ def f(x): # the vector objective function
 ideal=np.array([-1,-1,-1])
 nadir=np.array([1,2,2])
 
-## weights for Chebyshev
-w=1/(nadir-ideal)
+## basic weights for Chebyshev
+w0=1/(nadir-ideal)
 
 ## bounds
 bnd=[(-10,10) for i in range(nvar+1)]
@@ -36,45 +36,51 @@ bnd=[(-10,10) for i in range(nvar+1)]
 #   decision vector xt = [x1_1,...,x_n,t]
 
 ## ASF objective: t + augmentation term 
-#  *args = ( ref.point(list), rho(float) )
+#  *args = ( ref.point(list), rho(float), weights(list))
 def rhosum_f(xt,*args):
     return (
-           xt[-1]+ # t
-           args[1] * sum( w*(f(xt[:-1])-args[0]) ) # augm. term
+           xt[-1]#+ # t
+           #args[1] * sum( args[2]*(f(xt[:-1])-args[0]) ) # augm. term
            )
 ## l.h.s. fcuntions for ASF constraints: t >= w_i(f_i(x)-ref.point_i), i=1..n
-t_constr=[ # *args = (ref.point_i)
-        lambda xt,*args: -w[0]*fvect[0](xt[:-1])+xt[-1]+w[0]*args[0],
-        lambda xt,*args: -w[1]*fvect[1](xt[:-1])+xt[-1]+w[1]*args[0],
-        lambda xt,*args: -w[2]*fvect[2](xt[:-1])+xt[-1]+w[2]*args[0],
+t_constr=[ # *args = (ref.point_i,weight_i)
+        lambda xt,*args: -args[1]*fvect[0](xt[:-1])+xt[-1]+args[1]*args[0],
+        lambda xt,*args: -args[1]*fvect[1](xt[:-1])+xt[-1]+args[1]*args[0],
+        lambda xt,*args: -args[1]*fvect[2](xt[:-1])+xt[-1]+args[1]*args[0],
         ]
 
 ### PROBLEM SOLVING
 
-def solve_ref(refp,sampl_m='simplicial',itern=1,npoints=100):
+def solve_ref(refpoint,w,sampl_m='simplicial',itern=1,npoints=100):
+    # shifting the ref. point to exceed nadir+(nadir-ideal)
+    tadd=max(0,max(w*(5*nadir-4*ideal)))
+    refp=refpoint+tadd/w
+    # calling the solver
     sol = shgo(
             rhosum_f, #obj. function
             bounds=bnd, # variable bounds
-            args=(np.array(refp),10**-6), # parameters for obj. func.
+            args=(np.array(refp),10**-6,w), # parameters for obj. func.
             constraints=[ # constraints
-             {
-              "type": "ineq",
-              "fun": t_constr[i],
-              "args": (refp[i]+2/w[i],)
-              }                    
-            for i in range(nfun)
-            ],
+                 {
+                  "type": "ineq",
+                  "fun": t_constr[i],
+                  "args": (refp[i],w[i])
+                  }                    
+                for i in range(nfun)
+                ],
             sampling_method=sampl_m,
             iters=itern,
             n=npoints,
-            options={"minimize_every_iter":True,"local_iter":False}
+            options={"minimize_every_iter":True,"local_iter":True}
            )
+    # are ASF constraints tight?
     constr=[
-            t_constr[i](sol["x"],refp[i])
+            t_constr[i](sol["x"],refp[i],w[i])
             for i in range(nfun)
             ]
     if min(constr)>10**-6:
         print("Wrong constraints for ",refp,": ",constr)
+    # return
     return {"message": sol["message"],
             "x": sol["x"],
             "fun": sol["fun"],
@@ -85,7 +91,7 @@ if __name__=="__main__":
     for i in range(100):
         rfp=[ideal[i]+np.random.random_sample()*(nadir[i]-ideal[i])
                 for i in range(nfun)]
-        print(solve_ref(rfp,itern=5)["x"][:-1],"\n")
+        print(solve_ref(rfp,w0,itern=5)["x"][:-1],"\n")
     #sol=solve_ref([-1,-1,-1],itern=6)
     #print(sol)
 
