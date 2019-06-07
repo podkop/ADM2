@@ -1,0 +1,79 @@
+Run  5 :
+w =  [1.4771036281464087, 1.2823945400888515, 1.240368022992623]
+Method:  get_sol_rpm
+Iteration  0
+Created:  1 , left:  1
+Iteration  1
+Created:  66 , left:  45
+Iteration  2
+Created:  181 , left:  114
+Iteration  3
+Created:  294 , left:  180
+Iteration  4
+Created:  453 , left:  280
+Iteration  5
+Created:  583 , left:  360
+Iteration  6
+Created:  723 , left:  442
+Iteration  7
+Created:  855 , left:  525
+Iteration  8
+Created:  990 , left:  602
+Iteration  9
+Created:  1152 , left:  698
+Method:  get_sol_nimb
+Iteration  0
+Created:  1 , left:  1
+Iteration  1
+Created:  7 , left:  6
+Iteration  2
+Created:  88 , left:  62
+Iteration  3
+Created:  236 , left:  139
+Iteration  4
+Created:  322 , left:  198
+Iteration  5
+Created:  518 , left:  311
+Iteration  6
+Created:  603 , left:  367
+Iteration  7
+Created:  792 , left:  477
+Iteration  8
+Created:  988 , left:  580
+Iteration  9
+Created:  1152 , left:  688
+Iteration  10
+Created:  1385 , left:  830
+Iteration  11
+Created:  1518 , left:  890
+Wrong constraints for  [ 7.      12.65586 12.08075] :  [0.6089491598189228]
+Iteration  12
+Created:  1682 , left:  996
+Wrong constraints for  [ 7.      12.64892 12.09822] :  [0.6147708784603297]
+Iteration  13
+Created:  1841 , left:  1104
+Iteration  14
+Created:  2058 , left:  1227
+Iteration  15
+Created:  2285 , left:  1360
+Iteration  16
+Created:  2470 , left:  1472
+Iteration  17
+Created:  2672 , left:  1559
+Iteration  18
+Created:  2891 , left:  1694
+Iteration  19
+Created:  3049 , left:  1793
+Iteration  20
+Created:  3220 , left:  1891
+Wrong constraints for  [ 7.      12.68296 12.87354] :  [0.20250374157419807, 0.16450306446009205]
+Iteration  21
+Created:  3460 , left:  2022
+Wrong constraints for  [ 7.      12.78029 12.93262] :  [0.20250374157419807, 0.19694531090968487]
+Iteration  22
+Created:  3690 , left:  2150
+Iteration  23
+Created:  3855 , left:  2254
+Wrong constraints for  [ 7.      12.68296 12.87776] :  [0.20250374157419807, 0.16450306446009205]
+Iteration  24
+Created:  4005 , left:  2351

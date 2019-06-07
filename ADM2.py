@@ -1,12 +1,15 @@
 ### Declarations
 
 import numpy as np
+
 # system
 import copy
 import pickle
 
 import threeobj as th
 
+# Output
+import xlsxwriter
 import matplotlib.pyplot as plt
 # from pylab import *
 
@@ -243,7 +246,7 @@ class potreg(rindex.Index):
 #   .c: coefficient of optimism (float)               
 #   ._ideal, ._nadir: corresponding points
 #   ._potreg: potential region based on potreg class
-#   ._paretoset: list of nuique Pareto objective vectors
+#   ._paretoset: list of nonuique Pareto objective vectors
 #   ._npareto: nr. of unique Pareto objective vectors
 #   ._uf: utility function (R^k,Ideal,Nadir -> R)
 #   .telemetry: dictionary of lists collecting relevant information in each iteration
@@ -271,7 +274,6 @@ class ADM:
         self._nadir=nadir
         self.itern=1
         self._potreg=potreg(ideal,nadir)
-        self._paretoiter=[]
         self._paretoset=[]
         self._npareto=0
         self.c=coptimism
@@ -308,7 +310,7 @@ class ADM:
 
 ## Returns [aspiration vect., reservation vect] for a given box
     def _box_refpoint(self,b):
-        return [list(b[0]),list(b[1])]
+        return list((np.array(b[0])+np.array(b[1]))/2)
 ## Returns preference information (wrapper)
     def box_pref(self,b):
         return self._box_refpoint(b)
@@ -343,8 +345,6 @@ class ADM:
                     break
             if qincl:
                 pnew.append(p)
-        if len(pnew)==0:
-            return [False,[]]
         self._paretoset.extend(pnew)
         self._npareto+=len(pnew)
         # updating the potential region and calculating change indicator
@@ -354,11 +354,13 @@ class ADM:
                 ])
         if remove_boxes is not None:
             for b in remove_boxes:
+                # print("***\n",list(self._potreg.intersection(box2rindex(*b[0]))),"\n***")
                 # if box is in the potential region
                 if b[1] in self._potreg.intersection(box2rindex(*b[0])):
                     self._potreg._hypervol-=hv_box(*b[0])
                     self._potreg.delete(b[1],box2rindex(*b[0]))
                     qpoints=True
+                    self._potreg.nbox-=1
         return [qpoints,pnew]
 
 ## Returns the potential region as a list of boxes [min vect. , max vect.]
@@ -368,7 +370,16 @@ class ADM:
 
 ## Finds the best box based on _box_score and returns as [[min vect. , max vect.],id=ncre]
     def bestbox(self):
-        return max(self.potboxes(),key=lambda b:self._box_score(b[0]))    
+        return max(self.potboxes(),key=lambda b:self._box_score(b[0]))
+
+## Finds a best Pareto optimal vector w.r.t. UF and returns [vect.,UF(vect.)]
+    def best_y(self):
+        if len(self._paretoset)==0:
+            return [None,None]
+        y=max(self._paretoset, 
+              key = lambda yi: self._uf(yi,self._ideal,self._nadir) 
+              )
+        return [y,self._uf(y,self._ideal,self._nadir)]
 
             
 ## Given one or list of objective vectors, 
@@ -442,7 +453,19 @@ def normalize(xx,ideal,nadir):
     return np.array([(nad-x)/(nad-idl) for x,idl,nad in zip(xx,ideal,nadir)])
 
 
-
+## Interface for MOO methods functions
+def get_sol_nimb(pref,w,y,itern=5):
+    if y is None:
+        return [th.solve_ref(pref,w,itern=itern)["y"]]
+    return [r["y"] 
+                for r in th.solve_nimb(pref,w,y,itern=itern)]
+def get_sol_rpm(pref,w,y,itern=5):
+    return [r["y"]
+            for r in th.solve_rpm(
+                    pref,w,
+                    sampl_m='simplicial',itern=5,npoints=100
+                    )]
+    
 
 #############
 np.set_printoptions(precision=5)
@@ -451,7 +474,7 @@ np.set_printoptions(precision=5)
 ## Utility weight examples
 ut_ces1=[1,1,1]
 ut_ces2=[3,2,1]
-ut_mult=[2,4,3]
+ut_mult=[2,1,1]
     
 UFs=[
            lambda xx: CES_sum(xx,ut_ces1,0.01),
@@ -459,97 +482,231 @@ UFs=[
            lambda xx: CES_mult(xx,ut_mult)
         ]
 
-fig0,ax0=plt.subplots(figsize=(8,6))
-ax0.set_title("Solutions UF")
-fig1,ax1=plt.subplots(figsize=(8,6))
-ax1.set_title("Distance between solutions")
-fig2,ax2=plt.subplots(figsize=(8,6))
-ax2.set_title("Hypervolume")
-fig3,ax3=plt.subplots(figsize=(8,6))
-ax3.set_title("Boxes UF")
-
 UFn=2 # choosing a UF from the list
-copt_l=[1,0.5,0] # coefficient of optimism
-out=[] # collected outputs
-for ii, coptimism in enumerate(copt_l):
-    p=[]
-    # for collecting results
-    sols=[]
-    sols_uf=[]
-    A=ADM(
-            th.ideal,
-            th.nadir,
-            lambda x,ideal,nadir: UFs[UFn](normalize(x,ideal,nadir)),
-            coptimism)
-    sel_box=None # box based on which the last Pareto optimum was derived    
-    ## starting iterations
-    for i in range(100):
-        print("Iteration ",i)
-        ## ADM step
-        result=A.nextiter(p,[sel_box])
-        sel_box=result["bestbox"]
-        print("Created: ",A._potreg.ncre, ", left: ",A._potreg.nbox,", count: ",
-              A._potreg.count(box2rindex([-np.inf for i in range(th.nfun)],
-                                         [np.inf for i in range(th.nfun)]))
-              )
-        pref=np.array(result["pref"])
-        print("Preferences:\n",pref[0],"\n",pref[1])
-        ## METHOD step
-        # The main ASF solution
-        p=[th.f(
-                th.solve_ref(pref[0],
-                th.w0,#1/(pref[1]-pref[0]),
-                itern=5)["x"][:-1]
-                )
-                ]
-        # Modified ASF solutions
-        normdif=np.linalg.norm(pref[0]-p[0]) # perturbation value
-        for j in range(th.nfun):
-            pref1=copy.deepcopy(pref[0])
-            pref1[j]+=normdif
-            p.append(th.f(
-                th.solve_ref(pref1,
-                th.w0,#1/(pref[1]-pref[0]),
-                itern=5)["x"][:-1]
-                )
-                )
-        sols.append(p)
-        sols_uf.append([A._uf(ip,th.ideal,th.nadir) for ip in p])
-        p=np.unique(p, axis=0)
-        print("solution:\n",p,"\n")
-    out.append({
-        "method": "Reference Point Method",
-        "fname": "refp",
-        "problem": "f1 <= 1, itern=5, augm. 10E-8",
-        "uf": "mult",
-        "uf_weights": ut_mult,
-        "coptimism":A.c,
-        "solutions": sols,
-        "sol_uf": sols_uf,
-        "hypervol": A.telemetry["hypervol"],
-        "best_boxes": A.telemetry["bestbox"],
-        "box_uf": A.telemetry["ufbox"]
-            })
-    ax0.plot(A.telemetry["maxuf"])
-    ax1.plot([np.linalg.norm(
-            normalize(p2[0],th.ideal,th.nadir)-
-            normalize(p1[0],th.ideal,th.nadir)
-            ) for p1,p2 in 
-        zip(A.telemetry["Pareto"][1:],A.telemetry["Pareto"][:-1])]
-        )
-    ax2.plot(A.telemetry["hypervol"])
-    ax3.plot(A.telemetry["ufbox"])
-plt.show()
-for d in out:
-    with open(
-            "out/"+d["fname"]+"_"+
-            str(d["coptimism"]).replace(".","")+"_"+
-            d["uf"]+"".join(str(a) for a in d["uf_weights"])+".pkl",
-            "wb") as fout:
-        pickle.dump(d,fout,protocol=pickle.HIGHEST_PROTOCOL)
+
+### testing UF solution
+#t=[]
+#for i in range(1000):
+#    w=[1+np.random.rand() for i in range(th.nfun)]
+#    sol=th.solve_uf(lambda y: -CES_mult(normalize(y,th.ideal,th.nadir),w),itern=5)
+#    t.append(sol[1])
+#    print(w)
+
+
+
+### multi-experiments
+
+coptimism=0.5 # coefficient of optimism
+perturb = 0 # perturbation of UF (+- multiplicative)
+fold_name = "out/perturb/"
+
+methods_f=[get_sol_rpm,get_sol_nimb]
+
+itertest=10 # nr. of method iterations
+iterfail=25 # max iterations number for catching failure
+ufmax_frac=0.95 # required fraction of the maximum UF
+
+n_runs=10 # number of experiments
+## for collecting results
+# maximum UF fraction in itertest iterations
+maxuf_l=[[0 for m in methods_f] for i in range(n_runs)] 
+# hypervolume at the itertest iteration
+hypervol_l=[[0 for m in methods_f] for i in range(n_runs)]
+# nr. of boxes at the itertest iteration
+nboxes_l=[[0 for m in methods_f] for i in range(n_runs)]
+# nr. of iterations before success of achieving ufmax_frac
+nsucciter_l=[[iterfail+1 for m in methods_f] for i in range(n_runs)]
+
+nseries=1 # series of experiments for smaller batches
+for iex in range(n_runs):
+    ut_mult=[1+np.random.rand() for i in range(th.nfun)]
+    print("\n*****\nRun ",iex,":\nw = ",ut_mult)
+    maxuf_value=-th.solve_uf(
+            lambda y: -UFs[UFn](normalize(y,th.ideal,th.nadir)),
+            itern=5
+            )[2]
+    for mi, getsolf in enumerate(methods_f):
+        print("Method: ",getsolf.__name__)
+        A=ADM(
+                th.ideal,
+                th.nadir,
+                lambda y,ideal,nadir: UFs[UFn](normalize(y,ideal,nadir))* \
+                                      (1-perturb/2+np.random.rand()*perturb),
+                coptimism)
+        sel_box=None # box based on which the last Pareto optimum was derived    
+        p=[] # initial set of current solutions
+        iter_fracuf=False # iteration nr. when the fraction of UF has been achieved
+        maxyuf=-np.inf
+        ## starting iterations
+        for i in range(iterfail):
+            print("Iteration ",i)
+            ## ADM step
+            result=A.nextiter(p,[sel_box])
+            sel_box=result["bestbox"]
+            print("Created: ",A._potreg.ncre, ", left: ",A._potreg.nbox#,", count: ",
+                  #A._potreg.count(box2rindex([-np.inf for i in range(th.nfun)],
+                  #                           [np.inf for i in range(th.nfun)]))
+                  )
+            pref=np.array(result["pref"])
+            #print("Preferences: (",result["bestbox"][1],")\n",pref[0],"\n",pref[1])
+            ## METHOD step
+            ycurr = A.best_y()[0] # current
+            p=getsolf(pref,th.w0,ycurr)
+            p=np.unique([ip for ip in p if ip is not None], axis=0)
+            curr_uf=max([UFs[UFn](normalize(y,th.ideal,th.nadir)) for y in p])
+            if curr_uf>maxyuf and i<=itertest-1:
+                maxyuf=curr_uf
+            if not(iter_fracuf) and maxyuf/maxuf_value>=ufmax_frac:
+                iter_fracuf=i+1
+            if i>=itertest-1 and iter_fracuf:
+                break
+        maxuf_l[iex][mi]=maxyuf/maxuf_value
+        hypervol_l[iex][mi]=A.telemetry["hypervol"][itertest-1]
+        nboxes_l[iex][mi]=A.telemetry["nboxes"][itertest-1]
+        nsucciter_l[iex][mi]=iter_fracuf
+            
+# saving results
+with open(
+        fold_name+"experiments_"+
+        str(perturb).replace(".","")+
+        "_"+str(nseries)+
+        ".pkl",
+        "wb") as fout:
+    pickle.dump(
+            {
+                "maxuf":maxuf_l,
+                "hypervol":hypervol_l,
+                "nboxes":nboxes_l,
+                "nsucciter":nsucciter_l
+                    },
+            fout,protocol=pickle.HIGHEST_PROTOCOL)
     
 
 
+
+
+
+
+#### individual experiments
+#fig0,ax0=plt.subplots(figsize=(8,6))
+#ax0.set_title("Solutions UF")
+#fig1,ax1=plt.subplots(figsize=(8,6))
+#ax1.set_title("Distance between solutions")
+#fig2,ax2=plt.subplots(figsize=(8,6))
+#ax2.set_title("Hypervolume")
+#fig3,ax3=plt.subplots(figsize=(8,6))
+#ax3.set_title("Boxes UF")
+#
+#out=[] # collected outputs
+#
+#copt_l=[0.5]
+#perturb=0
+#ut_mult=[1.4771036281464087, 1.2823945400888515, 1.240368022992623]
+#
+#getsolf=get_sol_nimb
+#for ii, coptimism in enumerate(copt_l):
+#    p=[]
+#    # for collecting results
+#    sols=[]
+#    sols_uf=[]
+#    A=ADM(
+#            th.ideal,
+#            th.nadir,
+#            lambda x,ideal,nadir: UFs[UFn](normalize(x,ideal,nadir))* \
+#                                  (1-perturb/2+np.random.rand()*perturb),
+#            coptimism)
+#    sel_box=None # box based on which the last Pareto optimum was derived    
+#    ## starting iterations
+#    for i in range(25):
+#        print("Iteration ",i)
+#        ## ADM step
+#        result=A.nextiter(p,[sel_box])
+#        sel_box=result["bestbox"]
+#        print("Created: ",A._potreg.ncre, ", left: ",A._potreg.nbox#,", count: ",
+#              #A._potreg.count(box2rindex([-np.inf for i in range(th.nfun)],
+#              #                           [np.inf for i in range(th.nfun)]))
+#              )
+#        pref=np.array(result["pref"])
+#        #print("Preferences: (",result["bestbox"][1],")\n",pref[0],"\n",pref[1])
+#        ## METHOD step
+#        ycurr = A.best_y()[0] # current
+#        p=getsolf(pref,th.w0,ycurr,itern=5)
+#        sols.append(p)
+#        sols_uf.append([
+#                A._uf(ip,th.ideal,th.nadir) for ip in p if ip is not None
+#                ])
+#        p=np.unique([ip for ip in p if ip is not None], axis=0)
+#        #print("solution:\n",p,"\n")
+#    out.append({
+#        "method": "Nimbus",
+#        "fname": "nimb",
+#        "problem": "f1 <= 1, itern=5, augm. 10E-8",
+#        "uf": "mult",
+#        "uf_weights": ut_mult,
+#        "coptimism":A.c,
+#        "solutions": sols,
+#        "sol_uf": sols_uf,
+#        "hypervol": A.telemetry["hypervol"],
+#        "best_boxes": A.telemetry["bestbox"],
+#        "box_uf": A.telemetry["ufbox"]
+#            })
+#    ax0.plot(A.telemetry["maxuf"])
+#    ax1.plot([np.linalg.norm(
+#            normalize(p2[0],th.ideal,th.nadir)-
+#            normalize(p1[0],th.ideal,th.nadir)
+#            ) for p1,p2 in 
+#        zip(A.telemetry["Pareto"][1:],A.telemetry["Pareto"][:-1])]
+#        )
+#    ax2.plot(A.telemetry["hypervol"])
+#    ax3.plot(A.telemetry["ufbox"])
+#plt.show()
+
+## saving results
+#for d in out:
+#    with open(
+#            "out/"+d["fname"]+"_"+
+#            str(d["coptimism"]).replace(".","")+"_"+
+#            d["uf"]+"".join(str(a) for a in d["uf_weights"])+".pkl",
+#            "wb") as fout:
+#        pickle.dump(d,fout,protocol=pickle.HIGHEST_PROTOCOL)
+    
+
+#### comparing results
+#met_fnames=["refp","nimb"]
+#met_names=["RPM", "Nimbus"]
+#met_wvect=[[2,4,3],[2,1,1]]
+#met_copt=[1,0.5,0]
+#ser_names=[] #names of iteration series
+#UF_data=[] # UF(y) iteration series
+#HV_data=[] # hypervolume iteration series
+#
+#for i,fn in enumerate(met_fnames):
+#    for wv in met_wvect:
+#        for cop in met_copt:
+#            with open(
+#                "out/"+fn+"_"+str(cop).replace(".","") + "_mult"+ \
+#                "".join(str(a) for a in wv)+".pkl"
+#                    , 'rb') as fhandle:
+#                dict = pickle.load(fhandle)
+#            ser_names.append(met_names[i]+" "+str(wv)+ 
+#                             " ("+str(cop)+")")
+#            UF_data.append(dict["sol_uf"])
+#            HV_data.append(dict["hypervol"])
+#workbook = xlsxwriter.Workbook('out/compare.xlsx')
+#worksheet = workbook.add_worksheet("UF value")
+#for i,s in enumerate(ser_names):
+#    worksheet.write(0,i,s)
+#for i in range(len(UF_data)):
+#    for j in range(len(UF_data[1])):
+#        worksheet.write(j+1,i,max(UF_data[i][j]))
+#worksheet = workbook.add_worksheet("Hypervolume")
+#for i,s in enumerate(ser_names):
+#    worksheet.write(0,i,s)
+#for i in range(len(HV_data)):
+#    for j in range(len(HV_data[1])):
+#        worksheet.write(j+1,i,HV_data[i][j])
+#workbook.close()
+        
 #### Old version using DESDEO
             
 #problem = RiverPollution()
@@ -572,7 +729,7 @@ for d in out:
 #          )
 #    result=A.nextiter(p)
 #    pref=result["pref"]
-#    pref1=normalize([x[1] for x in pref],A._ideal,A._nadir)
+#    pref1=normalize(pref,A._ideal,A._nadir)
 #    print("Preferences:",[format(x,"1.10") for x in pref1])
 #    p=[method._factories[0].result(
 #                      NIMBUSClassification(method, pref), None
